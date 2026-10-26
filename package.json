@@ -1,0 +1,18 @@
+{
+  "name": "lantern-tales",
+  "version": "1.0.0",
+  "description": "AI text adventures",
+  "main": "main.js",
+  "author": "Lantern Tales",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.9.1"
+  },
+  "productName": "Lantern Tales",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "pack": "node scripts/pack.js"
+  }
+}

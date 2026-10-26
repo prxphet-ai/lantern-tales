@@ -1,0 +1,71 @@
+name: Desktop builds
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, platform: win32, arch: x64, zip: LanternTales-Windows-x64.zip }
+          - { os: macos-latest, platform: darwin, arch: arm64, zip: LanternTales-Mac-AppleSilicon.zip }
+          - { os: macos-latest, platform: darwin, arch: x64, zip: LanternTales-Mac-Intel.zip }
+          - { os: ubuntu-latest, platform: linux, arch: x64, zip: LanternTales-Linux-x64.zip }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Mac icon
+        if: matrix.platform == 'darwin'
+        run: |
+          mkdir -p build/icon.iconset
+          for s in 16 32 128 256 512; do
+            sips -z $s $s www/icons/icon-1024.png --out build/icon.iconset/icon_${s}x${s}.png
+            sips -z $((s*2)) $((s*2)) www/icons/icon-1024.png --out build/icon.iconset/icon_${s}x${s}@2x.png
+          done
+          iconutil -c icns build/icon.iconset -o build/icon.icns
+      - run: node scripts/pack.js ${{ matrix.platform }} ${{ matrix.arch }}
+      - name: Zip (Mac, ad-hoc signed so it opens on Apple Silicon)
+        if: matrix.platform == 'darwin'
+        run: |
+          APP="dist/Lantern Tales-darwin-${{ matrix.arch }}/Lantern Tales.app"
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --keepParent "$APP" "${{ matrix.zip }}"
+      - name: Zip (Windows)
+        if: matrix.platform == 'win32'
+        run: 7z a -tzip "${{ matrix.zip }}" "./dist/Lantern Tales-win32-x64"
+      - name: Zip (Linux)
+        if: matrix.platform == 'linux'
+        run: cd dist && zip -qry "../${{ matrix.zip }}" "Lantern Tales-linux-x64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.zip }}
+          path: ${{ matrix.zip }}
+          compression-level: 0
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.0' }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Lantern Tales $TAG" --notes "Desktop downloads. Unzip and run Lantern Tales. On first start, paste your OpenRouter key."
+          gh release upload "$TAG" out/*.zip -R "$GITHUB_REPOSITORY" --clobber
